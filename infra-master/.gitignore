@@ -1,0 +1,6 @@
+.env
+.DS_Store
+prod-build
+ssl/*
+!ssl/keygen.sh
+!ssl/*.conf

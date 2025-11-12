@@ -1,0 +1,183 @@
+@startuml Security Class Diagram
+
+skinparam ranksep 50
+skinparam nodesep 50
+skinparam direction topdown
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam noteFontSize 10
+skinparam noteBackgroundColor transparent
+skinparam linetype ortho
+
+' Layout hints
+together {
+    enum AuthStage
+    enum SessionAuthStage
+    enum Role
+}
+
+together {
+    class User
+    class Session
+}
+
+together {
+    class RedisSessionManager
+    class RedisTokenManager
+}
+
+' Enums
+enum AuthStage {
+    PASSWORD
+    PENDING_MFA
+    MFA_VERIFIED
+    EMAIL_VERIFIED
+}
+
+enum SessionAuthStage {
+    PASSWORD
+    MFA
+}
+
+enum Role {
+    ADMIN
+    RESEARCHER
+    ORGANIZATION
+}
+
+' Core Classes
+class User {
+    +name: String
+    +email: String
+    +hashed_password: String
+    +salt: String
+    +totp_secret: String
+    +auth_stage: AuthStage
+    +role: Role
+}
+
+class Session {
+    +user_id: int
+    +auth_stage: SessionAuthStage
+    +created_at: float
+    +last_active: float
+}
+
+' API Layer
+class UserAPI {
+    +register()
+    +login_password()
+    +login_mfa()
+    +register_mfa()
+    +verify_email()
+    +change_password()
+}
+
+' Middleware Layer
+class AuthMiddleware {
+    +authenticate()
+    +check_auth_stage(auth_stage: AuthStage, session_auth_stage: SessionAuthStage)
+    +check_roles(roles: List[Role])
+}
+
+class RateLimiter {
+    +limit(rate: String)
+}
+
+' Redis Components
+class RedisSessionManager {
+    +set_session_pending_mfa(user_id: int): String
+    +set_session_mfa_verified(session_id: String)
+    +fetch_session(session_id: String): Session
+    +delete_session(session_id: String)
+}
+
+class RedisTokenManager {
+    +generate_token(length: int): String
+    +get_user_verification_token(user_id: int): String
+}
+
+' Security Utilities (moved to bottom)
+class AuthUtils {
+    +hash_password(password: String, salt: String): String
+    +verify_password(hashed_password: String, password: String, salt: String): bool
+    +generate_salt(): String
+    +generate_totp_secret(): String
+    +get_totp_auth_uri(user: String, secret: String): String
+    +verify_totp(secret: String, code: String): bool
+}
+
+' Other APIs (moved to bottom)
+class OtherAPIs {
+
+}
+
+' Relationships
+User "1" -- "1" Session
+AuthMiddleware -down-> User : verifies
+AuthMiddleware -down-> Session : verifies
+AuthUtils -up-> User : uses
+RedisSessionManager -up-> Session : manages
+RedisTokenManager -up-> User : manages
+RateLimiter -down-> User : protects
+
+' API Layer Relationships
+UserAPI -down-> AuthMiddleware : behind
+UserAPI -down-> AuthUtils : uses
+UserAPI -down-> RedisSessionManager : uses
+UserAPI -down-> RedisTokenManager : uses
+UserAPI -down-> User : manages
+
+OtherAPIs -up-> AuthMiddleware : behind
+OtherAPIs -up-> User : uses
+OtherAPIs -up-> Session : uses
+
+note bottom of User
+  The database representation.
+  Stores user credentials and
+  authentication state
+end note
+
+note bottom of Session
+  Manages user session state
+  and authentication stages
+end note
+
+note bottom of AuthUtils
+  Handles password hashing,
+  TOTP generation and verification
+end note
+
+note bottom of AuthMiddleware
+  Provides authentication and
+  authorization logic for all APIs
+end note
+
+note bottom of RateLimiter
+  Prevents DoS attacks.
+  There is a default global rate limiter.
+end note
+
+note bottom of RedisSessionManager
+  Manages session storage and
+  expiration in Redis
+end note
+
+note bottom of RedisTokenManager
+  Handles token generation and
+  verification for email verification
+end note
+
+note bottom of UserAPI
+  Handles user authentication
+  and registration flows.
+  There are APIs that depend on non-default
+  auth stages such as `login`.
+end note
+
+note bottom of OtherAPIs
+  Protected by auth middleware,
+  requires valid session
+end note
+
+@enduml
